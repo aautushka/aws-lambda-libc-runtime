@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  CLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: CLambdaFunction
+      Handler: lambda_handler
+      Runtime: provided.al2023
+      CodeUri: ./target/bootstrap
+      Description: AWS Lambda function written in C
+      MemorySize: 128
+      Timeout: 10
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+
+Outputs:
+  CLambdaFunctionApi:
+    Description: API Gateway endpoint URL for the Lambda function
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
