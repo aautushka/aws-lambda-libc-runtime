@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <errno.h>
 
 #include "runtime.h"
 
@@ -113,7 +114,18 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
 
         if (parse_point >= response + total_bytes_received) {
             DEBUG("Calling recv with ptr=%d, remain=%d\n", total_bytes_received, remain);
-            int bytes_received = recv(sockfd, response + total_bytes_received, remain, 0);
+            int bytes_received;
+            do {
+                bytes_received = recv(sockfd, response + total_bytes_received, remain, 0);
+            } while (bytes_received < 0 && errno == EINTR);
+
+            if (bytes_received < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    DEBUG("recv() timed out\n");
+                } else {
+                    DEBUG("recv() failed with error: %s\n", strerror(errno));
+                }
+            }
             DEBUG("Received %d bytes\n", bytes_received);
             FATAL(bytes_received <= 0, "Failed to receive bytes\n");
             total_bytes_received += bytes_received;
