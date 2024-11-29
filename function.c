@@ -30,6 +30,6 @@ void cleanup(char *result) {
 }
 
 int main() {
-    fprintf(stderr, "Main started\n");
+    DEBUG("Main started\n");
     return start_lambda(lambda_handler, cleanup);
 }

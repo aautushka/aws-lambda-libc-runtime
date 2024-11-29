@@ -4,4 +4,5 @@ COPY *.c *.h ./
 COPY template.yaml samconfig.toml ./
 RUN mkdir -p target
 RUN gcc -O3 -DRELEASE -o target/bootstrap runtime.c function.c
+RUN strip -s target/bootstrap
 CMD ["sam", "deploy"]

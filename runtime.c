@@ -12,21 +12,7 @@
 
 #include "runtime.h"
 
-char *startswith(char *s, const char *prefix) {
-    while (*prefix) {
-        if (*prefix != *s) {
-            return NULL;
-        }
-        ++prefix;
-        ++s;
-    }
-    while (*s == ' ') {
-        ++s;
-    }
-    return s;
-}
-
-struct addrinfo *resolve_host(const char *host_and_port) {
+static inline struct addrinfo *resolve_host(const char *host_and_port) {
     struct addrinfo hints;
     struct addrinfo *result;
     memset(&hints, 0, sizeof(hints));
@@ -64,7 +50,7 @@ int send_all(int sockfd, const char *buf, int len) {
     return total_sent;
 }
 
-int socket_connect(const struct addrinfo *addr) {
+static inline int socket_connect(const struct addrinfo *addr) {
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     FATAL(sockfd < 0, "Failed to create socket\n");
 
@@ -107,6 +93,7 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
     int total_bytes_received = 0;
     int content_length = -1;
     int remain = MAX_BUFFER_SIZE;
+    char *delimiter = NULL;
 
     while(remain) {
         
@@ -119,15 +106,9 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
                 bytes_received = recv(sockfd, response + total_bytes_received, remain, 0);
             } while (bytes_received < 0 && errno == EINTR);
 
-            if (bytes_received < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    DEBUG("recv() timed out\n");
-                } else {
-                    DEBUG("recv() failed with error: %s\n", strerror(errno));
-                }
-            }
             DEBUG("Received %d bytes\n", bytes_received);
             FATAL(bytes_received <= 0, "Failed to receive bytes\n");
+
             total_bytes_received += bytes_received;
             remain -= bytes_received;
             if (body_start != NULL) {
@@ -135,8 +116,11 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
                 continue;
             }
         }
+        if (*parse_point == ':') {
+            delimiter = parse_point;
+        }
+        else
         if (*parse_point == '\n') {
-            char *value_ptr;
             FATAL(parse_point - response < 3, "Unexpected linebreak before HTTP headers");
             FATAL(parse_point[-1] != '\r', "Malformed linebreak: no \\r before \\n");
             if (parse_point[-2] == '\n') {
@@ -147,26 +131,25 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
                 parse_point = response + total_bytes_received;
                 continue;
             }
+            if(delimiter == NULL) {
+                if(!memcmp(line_start, "HTTP/1.0 410", 12)) {
+                    DEBUG("410 (shutting down)\n"); // for testing only
+                    exit(0);
+                }
+            }
             else
-            if((value_ptr = startswith(line_start, "Content-Length:"))) {
-                content_length = atoi(value_ptr);
-                DEBUG("HEADER Content-Length: %d\n", content_length);
+            if(!strncmp(line_start, "Content-Length:", delimiter - line_start)) {
+                content_length = atoi(delimiter + 2);
+                DEBUG("HEADER Content-Length: %d\n", content_length);  
             }
             else 
-            if((value_ptr = startswith(line_start, "Lambda-Runtime-Aws-Request-Id:"))) {
-                hb->awsRequestId = value_ptr;
-                while(*value_ptr != '\r') {
-                    value_ptr++;
-                }
-                value_ptr[0] = '\0';
-                DEBUG("HEADER Lambda-Runtime-Aws-Request-Id: [%s]\n", hb->awsRequestId);
-            }
-            else
-            if((value_ptr = startswith(line_start, "HTTP/1.0 410"))) {
-                DEBUG("410 (shutting down)\n");
-                exit(0);
+            if(!strncmp(line_start, "Lambda-Runtime-Aws-Request-Id:", delimiter - line_start)) {
+                hb->awsRequestId = delimiter + 2;
+                hb->awsRequestIdLen = (parse_point - hb->awsRequestId) - 1;
+                DEBUG("HEADER Lambda-Runtime-Aws-Request-Id: [%.*s]\n", hb->awsRequestIdLen, hb->awsRequestId);
             }
             line_start = parse_point + 1;
+            delimiter = NULL;
         }
 
         ++parse_point;
@@ -174,6 +157,7 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
     DEBUG("Total bytes received: %d\n", total_bytes_received);
     response[total_bytes_received] = '\0';
     hb->body = body_start;
+    hb->bufferLen = total_bytes_received;
     close(sockfd);
     DEBUG("Response received\n");
 }
@@ -184,8 +168,8 @@ int start_lambda(char* (*handler)(const http_buffer*), void (*cleanup)(char*)) {
     DEBUG("Runtime API: %s\n", runtimeApi);
     struct addrinfo *addrinfo = resolve_host(runtimeApi);
 
-    char requestUrl[256];
-    snprintf(requestUrl, sizeof(requestUrl), "http://%s/2018-06-01/runtime/invocation/next", runtimeApi);
+    char requestUrl[strlen(runtimeApi) + 43];
+    sprintf(requestUrl, "http://%s/2018-06-01/runtime/invocation/next", runtimeApi);
 
     http_buffer hb;
     hb.buffer = mmap(NULL, 
@@ -201,7 +185,7 @@ int start_lambda(char* (*handler)(const http_buffer*), void (*cleanup)(char*)) {
 
         char* lambda_response = handler(&hb);
 
-        snprintf(responseUrl, sizeof(responseUrl), "http://%s/2018-06-01/runtime/invocation/%s/response", runtimeApi, hb.awsRequestId);
+        snprintf(responseUrl, sizeof(responseUrl), "http://%s/2018-06-01/runtime/invocation/%.*s/response", runtimeApi, hb.awsRequestIdLen, hb.awsRequestId);
 
         hb.awsRequestId = NULL;
         hb.body = NULL;

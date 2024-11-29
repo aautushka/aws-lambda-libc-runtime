@@ -14,9 +14,11 @@
 #define MAX_BUFFER_SIZE (MAX_BODY_SIZE + MAX_HEADER_SIZE)
 
 typedef struct {
-    char *body;
-    char *awsRequestId;
     char *buffer;
+    int bufferLen;
+    char *awsRequestId;
+    int awsRequestIdLen;
+    char *body;
 } http_buffer;
 
 int start_lambda(char* (*handler)(const http_buffer*), void (*cleanup)(char*));
