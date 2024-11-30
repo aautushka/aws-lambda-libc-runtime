@@ -1,47 +1,70 @@
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netdb.h>
+#include <netinet/ip.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <errno.h>
+#include <sys/time.h> 
 
 #include "runtime.h"
 
-static inline struct addrinfo *resolve_host(const char *host_and_port) {
-    struct addrinfo hints;
-    struct addrinfo *result;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;    // Use IPv4
-    hints.ai_socktype = SOCK_STREAM; // TCP socket
-    hints.ai_protocol = 0;        // Any protocol
+struct runtime {
+    http_recv_buffer *hb;
+    struct addrinfo *runtime_addrinfo;
+    const char *runtime_api;
+};
 
-    char *colon = strchr(host_and_port, ':');
-    char host_no_port[strlen(host_and_port)+1];
+static inline struct addrinfo *resolve_host(const char *endpoint)
+{
+    static struct addrinfo result;
+    static struct sockaddr_in addr;
+    
+    DEBUG("Resolving endpoint: %s\n", endpoint);
+
+    char *colon = strchr(endpoint, ':');
+    char host_no_port[strlen(endpoint) + 1];
     char *port;
-    if(colon != NULL) {
-        strncpy(host_no_port, host_and_port, colon - host_and_port);
-        host_no_port[colon - host_and_port] = '\0';
+    if (colon != NULL)
+    {
+        strncpy(host_no_port, endpoint, colon - endpoint);
+        host_no_port[colon - endpoint] = '\0';
         port = colon + 1;
-    } else {
-        strcpy(host_no_port, host_and_port);
+    }
+    else
+    {
+        strcpy(host_no_port, endpoint);
         port = "80";
     }
+    DEBUG("Parsed endpoint into host=[%s] and port=[%s]\n", host_no_port, port);
 
-    int rc = getaddrinfo(host_no_port, port, &hints, &result);
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_protocol = 0;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_INET;
+    hints.ai_flags = AI_NUMERICSERV | AI_ADDRCONFIG;
+    struct addrinfo *dns_result;
+
+    int rc = getaddrinfo(host_no_port, port, &hints, &dns_result);
     DEBUG("getaddrinfo[%s:%s] returned rc=%d\n", host_no_port, port, rc);
     FATAL(rc != 0, "getaddrinfo failed");
-
-    return result;
+    return dns_result;
 }
 
-int send_all(int sockfd, const char *buf, int len) {
+static int send_all(int sockfd, const char *buf, int len)
+{
     int total_sent = 0;
-    while (total_sent < len) {
+    while (total_sent < len)
+    {
         int rc = send(sockfd, buf + total_sent, len - total_sent, 0);
         FATAL(rc < 0, "Failed to send data\n");
         total_sent += rc;
@@ -50,17 +73,25 @@ int send_all(int sockfd, const char *buf, int len) {
     return total_sent;
 }
 
-static inline int socket_connect(const struct addrinfo *addr) {
+int socket_connect(const struct addrinfo *addr)
+{
+    DEBUG("Creating socket\n");
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     FATAL(sockfd < 0, "Failed to create socket\n");
 
-    // Set socket timeout
-    struct timeval timeout;      
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-    int rc = setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
-    FATAL(rc < 0, "Failed to set socket timeout\n");
+    DEBUG("Setting socket timeout\n");
+    struct timeval timeout = {
+        .tv_sec = 1,
+        .tv_usec = 0
+    };
+    
+    int rc = setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    if (rc < 0) {
+        perror("setsockopt failed");
+        FATAL(rc < 0, "Failed to set socket timeout\n");
+    }
 
+    DEBUG("Connecting socket\n");
     rc = connect(sockfd, addr->ai_addr, addr->ai_addrlen);
 
     FATAL(rc < 0, "Connection failed\n");
@@ -68,25 +99,30 @@ static inline int socket_connect(const struct addrinfo *addr) {
     return sockfd;
 }
 
-void make_http_request(const struct addrinfo *addr, const char *host, const char* path, const char* method, char *body, http_buffer *hb) {
+static void http(const runtime *rt, const char *path, const char *method, const char *content, int req_content_length)
+{
+    const char *host = rt->runtime_api;
+    const struct addrinfo *addr = rt->runtime_addrinfo;
+    http_recv_buffer *hb = rt->hb;
+
     DEBUG("Making HTTP request to host=[%s], path=[%s], method=[%s]\n", host, path, method);
     int sockfd = socket_connect(addr);
 
-    int len = body ? strlen(body) : 0;
     char request[MAX_HEADER_SIZE];
     snprintf(request, sizeof(request),
-            "%s %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\n"
-            "Content-Length: %ld\r\n\r\n",
-            method, path, host, len);
+             "%s %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\n"
+             "Content-Length: %d\r\n\r\n",
+             method, path, host, req_content_length);
 
     DEBUG("Request headers:\n<<<\n%s\n>>>\n", request);
     send_all(sockfd, request, strlen(request));
-    
-    if (len > 0) {
-        send_all(sockfd, body, len);
+
+    if (req_content_length > 0)
+    {
+        send_all(sockfd, content, req_content_length);
     }
 
-    char *response = hb->buffer;
+    char *response = hb->buffer.data;
     char *parse_point = response;
     char *line_start = response;
     char *body_start = NULL;
@@ -94,15 +130,20 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
     int content_length = -1;
     int remain = MAX_BUFFER_SIZE;
     char *delimiter = NULL;
+    hb->body.data = NULL;
+    hb->awsRequestId.data = NULL;
 
-    while(remain) {
-        
+    while (remain)
+    {
+
         FATAL(parse_point >= response + MAX_BUFFER_SIZE, "Buffer overflow");
 
-        if (parse_point >= response + total_bytes_received) {
+        if (parse_point >= response + total_bytes_received)
+        {
             DEBUG("Calling recv with ptr=%d, remain=%d\n", total_bytes_received, remain);
             int bytes_received;
-            do {
+            do
+            {
                 bytes_received = recv(sockfd, response + total_bytes_received, remain, 0);
             } while (bytes_received < 0 && errno == EINTR);
 
@@ -111,19 +152,22 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
 
             total_bytes_received += bytes_received;
             remain -= bytes_received;
-            if (body_start != NULL) {
+            if (body_start != NULL)
+            {
                 parse_point += bytes_received;
                 continue;
             }
         }
-        if (*parse_point == ':') {
+        if (*parse_point == ':')
+        {
             delimiter = parse_point;
         }
-        else
-        if (*parse_point == '\n') {
+        else if (*parse_point == '\n')
+        {
             FATAL(parse_point - response < 3, "Unexpected linebreak before HTTP headers");
             FATAL(parse_point[-1] != '\r', "Malformed linebreak: no \\r before \\n");
-            if (parse_point[-2] == '\n') {
+            if (parse_point[-2] == '\n')
+            {
                 FATAL(content_length < 0, "Missing Content-Length header.");
                 body_start = parse_point + 1;
                 remain = content_length - ((response + total_bytes_received) - body_start);
@@ -131,22 +175,24 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
                 parse_point = response + total_bytes_received;
                 continue;
             }
-            if(delimiter == NULL) {
-                if(!memcmp(line_start, "HTTP/1.0 410", 12)) {
+            if (delimiter == NULL)
+            {
+                if (!memcmp(line_start, "HTTP/1.0 410", 12))
+                {
                     DEBUG("410 (shutting down)\n"); // for testing only
                     exit(0);
                 }
             }
-            else
-            if(!strncmp(line_start, "Content-Length:", delimiter - line_start)) {
+            else if (!strncmp(line_start, "Content-Length:", delimiter - line_start))
+            {
                 content_length = atoi(delimiter + 2);
-                DEBUG("HEADER Content-Length: %d\n", content_length);  
+                DEBUG("HEADER Content-Length: %d\n", content_length);
             }
-            else 
-            if(!strncmp(line_start, "Lambda-Runtime-Aws-Request-Id:", delimiter - line_start)) {
-                hb->awsRequestId = delimiter + 2;
-                hb->awsRequestIdLen = (parse_point - hb->awsRequestId) - 1;
-                DEBUG("HEADER Lambda-Runtime-Aws-Request-Id: [%.*s]\n", hb->awsRequestIdLen, hb->awsRequestId);
+            else if (!strncmp(line_start, "Lambda-Runtime-Aws-Request-Id:", delimiter - line_start))
+            {
+                hb->awsRequestId.data = delimiter + 2;
+                hb->awsRequestId.len = (parse_point - hb->awsRequestId.data) - 1;
+                DEBUG("HEADER Lambda-Runtime-Aws-Request-Id: [%.*s]\n", (int) hb->awsRequestId.len, hb->awsRequestId.data);
             }
             line_start = parse_point + 1;
             delimiter = NULL;
@@ -156,42 +202,57 @@ void make_http_request(const struct addrinfo *addr, const char *host, const char
     }
     DEBUG("Total bytes received: %d\n", total_bytes_received);
     response[total_bytes_received] = '\0';
-    hb->body = body_start;
-    hb->bufferLen = total_bytes_received;
+    hb->buffer.len = total_bytes_received;
+    hb->body.data = body_start;
+    hb->body.len = total_bytes_received - (body_start - response);
     close(sockfd);
     DEBUG("Response received\n");
 }
 
-int start_lambda(char* (*handler)(const http_buffer*), void (*cleanup)(char*)) {
-    const char* runtimeApi = getenv("AWS_LAMBDA_RUNTIME_API");
-    FATAL(runtimeApi == NULL, "AWS_LAMBDA_RUNTIME_API environment variable not set\n");
-    DEBUG("Runtime API: %s\n", runtimeApi);
-    struct addrinfo *addrinfo = resolve_host(runtimeApi);
+runtime* runtime_init() {
+    // using static here is fine because we only have to process one request at a time.
+    static runtime rt;
+    static http_recv_buffer hb;
+    rt.hb = &hb;
 
-    char requestUrl[strlen(runtimeApi) + 43];
-    sprintf(requestUrl, "http://%s/2018-06-01/runtime/invocation/next", runtimeApi);
+    rt.runtime_api = getenv("AWS_LAMBDA_RUNTIME_API");
+    FATAL(rt.runtime_api == NULL, "AWS_LAMBDA_RUNTIME_API environment variable not set\n");
+    DEBUG("Runtime API: %s\n", rt.runtime_api);
+    rt.runtime_addrinfo = resolve_host(rt.runtime_api);
 
-    http_buffer hb;
-    hb.buffer = mmap(NULL, 
-        MAX_BUFFER_SIZE, 
-        PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    hb.buffer.data = mmap(NULL, MAX_BUFFER_SIZE,
+                          PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-    char responseUrl[256];
+    FATAL(hb.buffer.data == MAP_FAILED, "Failed to allocate memory\n");
+    DEBUG("Allocated %d bytes at %p\n", MAX_BUFFER_SIZE, hb.buffer.data);
+    return &rt;
+}
+
+http_recv_buffer* get_next_request(const runtime *rt) {
+    char *path =  "/2018-06-01/runtime/invocation/next";
+    DEBUG("Getting next request\n");
+    http(rt, path, "GET", "", 0);
+    FATAL(rt->hb->awsRequestId.data == NULL, "Missing Lambda-Runtime-Aws-Request-Id header\n");
+    return rt->hb;
+}
+
+void send_response(const runtime *rt, const char *response, size_t response_len) {
+    char path[256];
+    snprintf(path, sizeof(path), 
+             "/2018-06-01/runtime/invocation/%.*s/response", 
+             (int) rt->hb->awsRequestId.len, rt->hb->awsRequestId.data);
+    http(rt, path, "POST", response, response_len);
+}
+
+int start_lambda(slice (*handler)(const http_recv_buffer *), void (*cleanup)(slice*))
+{
+    runtime *rt = runtime_init();
 
     while (1) {
-
-        make_http_request(addrinfo, runtimeApi, requestUrl, "GET", "", &hb);
-        FATAL(hb.awsRequestId == NULL, "Missing Lambda-Runtime-Aws-Request-Id header\n");
-
-        char* lambda_response = handler(&hb);
-
-        snprintf(responseUrl, sizeof(responseUrl), "http://%s/2018-06-01/runtime/invocation/%.*s/response", runtimeApi, hb.awsRequestIdLen, hb.awsRequestId);
-
-        hb.awsRequestId = NULL;
-        hb.body = NULL;
-        make_http_request(addrinfo, runtimeApi, responseUrl, "POST", lambda_response, &hb);
-
-        cleanup(lambda_response);
+        http_recv_buffer *hb = get_next_request(rt);
+        slice lambda_response = handler(hb);
+        send_response(rt, lambda_response.data, lambda_response.len);
+        cleanup(&lambda_response);
     }
     return 0;
 }

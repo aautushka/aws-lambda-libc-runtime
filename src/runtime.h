@@ -14,11 +14,26 @@
 #define MAX_BUFFER_SIZE (MAX_BODY_SIZE + MAX_HEADER_SIZE)
 
 typedef struct {
-    char *buffer;
-    int bufferLen;
-    char *awsRequestId;
-    int awsRequestIdLen;
-    char *body;
-} http_buffer;
+    char *data;
+    size_t len;
+} slice;
 
-int start_lambda(char* (*handler)(const http_buffer*), void (*cleanup)(char*));
+typedef struct {
+    slice buffer;
+    slice awsRequestId;
+    slice body;
+} http_recv_buffer;
+
+// higher-level interface ("bring your own handler"):
+
+int start_lambda(slice (*handler)(const http_recv_buffer*), void (*cleanup)(slice *));
+
+// lower-level interface ("bring your own loop") - simplifies access via Rust FFI:
+
+typedef struct runtime runtime;
+
+runtime* runtime_init();
+
+http_recv_buffer* get_next_request(const runtime *rt);
+
+void send_response(const runtime *rt, const char *response, size_t response_len);

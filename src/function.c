@@ -3,19 +3,22 @@
 #include <string.h>
 #include "runtime.h"
 
-char* lambda_handler(const http_buffer *event) {
+slice lambda_handler(const http_recv_buffer *event) {
     // Process the event and return the result as a JSON string
     const char preamble[] = "{\"message\":\"Hello from C! Event received: ";
     int count_quotes = 0;
-    for (char* p = event->body; *p; ++p) {
+    for (char* p = event->body.data; *p; ++p) {
         if (*p == '"') {
             ++count_quotes;
         }
     }
-    char* result = malloc(sizeof(preamble) + strlen(event->body) + count_quotes + 1);
-    strcpy(result, preamble);
-    char* p = result + strlen(result);
-    for (char* q = event->body; *q; ++q) {
+    slice result;
+    result.len = sizeof(preamble) + event->body.len + count_quotes + 1;
+    result.data = malloc(result.len);
+
+    strcpy(result.data, preamble);
+    char* p = result.data + sizeof(preamble) - 1;
+    for (char* q = event->body.data; *q; ++q) {
         if (*q == '"') {
             *p++ = '\\';
         }
@@ -25,8 +28,9 @@ char* lambda_handler(const http_buffer *event) {
     return result;
 }
 
-void cleanup(char *result) {
-    free(result);
+void cleanup(slice *result) {
+    free(result->data);
+    result->data = NULL;
 }
 
 int main() {

@@ -4,5 +4,5 @@ RUN mkdir -p target
 COPY src src/
 RUN gcc -O3 -DRELEASE -o target/bootstrap src/runtime.c src/function.c
 RUN strip -s target/bootstrap
-COPY deploy/*.??ml ./
+COPY sam-deploy/*.??ml ./
 CMD ["sam", "deploy"]
