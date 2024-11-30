@@ -8,6 +8,7 @@ Features:
 - No use of malloc in the core: Bring your own arena gc allocator, or use malloc if you want
 - Micro-optimized to avoid waste, sometimes without measureable performance gain
 
-This is an alternative to https://github.com/PauloMigAlmeida/aws-lambda-c-runtime
-
-If you are not sure which one to use, you should probably choose the other one. 
+Alternatives:
+- This is an alternative to https://github.com/PauloMigAlmeida/aws-lambda-c-runtime
+- If you are not sure which project to use, you should probably choose the other one. 
+- If you like Javascript, have a look at https://github.com/awslabs/llrt

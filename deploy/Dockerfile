@@ -1,8 +1,8 @@
 FROM public.ecr.aws/sam/build-provided.al2023
 WORKDIR /build
-COPY *.c *.h ./
-COPY template.yaml samconfig.toml ./
 RUN mkdir -p target
-RUN gcc -O3 -DRELEASE -o target/bootstrap runtime.c function.c
+COPY src src/
+RUN gcc -O3 -DRELEASE -o target/bootstrap src/runtime.c src/function.c
 RUN strip -s target/bootstrap
+COPY deploy/*.??ml ./
 CMD ["sam", "deploy"]
