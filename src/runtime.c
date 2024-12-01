@@ -21,13 +21,11 @@ struct runtime {
     http_recv_buffer *hb;
     struct addrinfo *runtime_addrinfo;
     const char *runtime_api;
+    char *response_buffer;
 };
 
 static inline struct addrinfo *resolve_host(const char *endpoint)
 {
-    static struct addrinfo result;
-    static struct sockaddr_in addr;
-    
     DEBUG("Resolving endpoint: %s\n", endpoint);
 
     char *colon = strchr(endpoint, ':');
@@ -57,6 +55,7 @@ static inline struct addrinfo *resolve_host(const char *endpoint)
     int rc = getaddrinfo(host_no_port, port, &hints, &dns_result);
     DEBUG("getaddrinfo[%s:%s] returned rc=%d\n", host_no_port, port, rc);
     FATAL(rc != 0, "getaddrinfo failed");
+    (void)rc;
     return dns_result;
 }
 
@@ -128,7 +127,7 @@ static void http(const runtime *rt, const char *path, const char *method, const 
     char *body_start = NULL;
     int total_bytes_received = 0;
     int content_length = -1;
-    int remain = MAX_BUFFER_SIZE;
+    int remain = MAX_REQUEST_BUFFER;
     char *delimiter = NULL;
     hb->body.data = NULL;
     hb->awsRequestId.data = NULL;
@@ -136,7 +135,7 @@ static void http(const runtime *rt, const char *path, const char *method, const 
     while (remain)
     {
 
-        FATAL(parse_point >= response + MAX_BUFFER_SIZE, "Buffer overflow");
+        FATAL(parse_point >= response + MAX_REQUEST_BUFFER, "Buffer overflow");
 
         if (parse_point >= response + total_bytes_received)
         {
@@ -209,6 +208,18 @@ static void http(const runtime *rt, const char *path, const char *method, const 
     DEBUG("Response received\n");
 }
 
+void *mapalloc(size_t size)
+{
+    int pagesize = getpagesize();
+    size = (size | (pagesize - 1)) + 1 + pagesize;
+    void *ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    FATAL(ptr == MAP_FAILED, "Failed to allocate memory\n");
+    // set a SEGV trap at the end of the buffer
+    mprotect(ptr + (size - pagesize), pagesize, PROT_NONE);
+    DEBUG("Allocated %d bytes at %p\n", MAX_REQUEST_BUFFER, ptr);
+    return ptr;
+}
+
 runtime* runtime_init() {
     // using static here is fine because we only have to process one request at a time.
     static runtime rt;
@@ -220,11 +231,8 @@ runtime* runtime_init() {
     DEBUG("Runtime API: %s\n", rt.runtime_api);
     rt.runtime_addrinfo = resolve_host(rt.runtime_api);
 
-    hb.buffer.data = mmap(NULL, MAX_BUFFER_SIZE,
-                          PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
-    FATAL(hb.buffer.data == MAP_FAILED, "Failed to allocate memory\n");
-    DEBUG("Allocated %d bytes at %p\n", MAX_BUFFER_SIZE, hb.buffer.data);
+    hb.buffer.data = mapalloc(MAX_REQUEST_BUFFER);
+    rt.response_buffer = mapalloc(MAX_RESPONSE_BUFFER);
     return &rt;
 }
 
@@ -236,6 +244,10 @@ http_recv_buffer* get_next_request(const runtime *rt) {
     return rt->hb;
 }
 
+char *get_response_buffer(const runtime *rt) {
+    return rt->response_buffer;
+}
+
 void send_response(const runtime *rt, const char *response, size_t response_len) {
     char path[256];
     snprintf(path, sizeof(path), 
@@ -244,15 +256,14 @@ void send_response(const runtime *rt, const char *response, size_t response_len)
     http(rt, path, "POST", response, response_len);
 }
 
-int start_lambda(slice (*handler)(const http_recv_buffer *), void (*cleanup)(slice*))
+void start_lambda(int (*handler)(const http_recv_buffer *, char *))
 {
     runtime *rt = runtime_init();
+    char *output_buffer = get_response_buffer(rt);
 
     while (1) {
         http_recv_buffer *hb = get_next_request(rt);
-        slice lambda_response = handler(hb);
-        send_response(rt, lambda_response.data, lambda_response.len);
-        cleanup(&lambda_response);
+        int lambda_response_length = handler(hb, output_buffer);
+        send_response(rt, output_buffer, lambda_response_length);
     }
-    return 0;
 }

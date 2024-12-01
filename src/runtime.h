@@ -9,9 +9,11 @@
 #define FATAL(COND, MSG)
 #endif
 
-#define MAX_BODY_SIZE 6 * 1048576
+#define MAX_REQUEST_SIZE 6 * 1048576
+#define MAX_RESPONSE_SIZE 6 * 1048576
 #define MAX_HEADER_SIZE 8 * 1024
-#define MAX_BUFFER_SIZE (MAX_BODY_SIZE + MAX_HEADER_SIZE)
+#define MAX_REQUEST_BUFFER (MAX_REQUEST_SIZE + MAX_HEADER_SIZE)
+#define MAX_RESPONSE_BUFFER (MAX_RESPONSE_SIZE)
 
 typedef struct {
     char *data;
@@ -26,7 +28,7 @@ typedef struct {
 
 // higher-level interface ("bring your own handler"):
 
-int start_lambda(slice (*handler)(const http_recv_buffer*), void (*cleanup)(slice *));
+void start_lambda(int (*handler)(const http_recv_buffer*, char *));
 
 // lower-level interface ("bring your own loop") - simplifies access via Rust FFI:
 
@@ -34,6 +36,8 @@ typedef struct runtime runtime;
 
 runtime* runtime_init();
 
+char *get_response_buffer(const runtime *rt);
+
 http_recv_buffer* get_next_request(const runtime *rt);
 
-void send_response(const runtime *rt, const char *response, size_t response_len);
+void send_response(const runtime *rt, const char *response_buffer, size_t response_len);

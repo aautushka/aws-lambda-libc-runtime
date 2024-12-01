@@ -23,7 +23,8 @@ RUN cargo build --target ${TARGET} --release
 
 WORKDIR /build/zort-rust-example
 RUN cargo build --target ${TARGET} --release
-RUN ln -f target/${TARGET}/release/bootstrap /build/bootstrap
+RUN cp target/${TARGET}/release/bootstrap /build/bootstrap
+RUN strip -s /build/bootstrap
 
 #
 # Local integration test using mock server
@@ -34,6 +35,13 @@ RUN pip3 install requests
 WORKDIR /test
 COPY --from=builder /build/bootstrap /test/bootstrap
 COPY tests/test_runtime.py .
-#RUN python3 test_runtime.py /test/bootstrap
-CMD ["python3", "test_runtime.py", "/test/bootstrap"]
-#CMD ["sh"]
+RUN python3 test_runtime.py /test/bootstrap
+
+# 
+# Deploy to AWS using SAM CLI
+#
+FROM public.ecr.aws/sam/build-provided.al2023
+WORKDIR /build
+COPY --from=builder /build/bootstrap /build/target/bootstrap
+COPY sam-deploy/*.??ml ./
+CMD ["sam", "deploy"]

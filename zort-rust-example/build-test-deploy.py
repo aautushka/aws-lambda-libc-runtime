@@ -10,5 +10,5 @@ context_path = os.path.dirname(script_dir)
 build_command = ['docker', 'build', '-t', TAG, '-f', dockerfile_path, context_path]
 build_process = subprocess.run(build_command, check=True)
 
-run_command = ['docker', 'run', '-it', 'rust-example']
+run_command = ['docker', 'run', '-v', f"{os.path.expanduser('~')}/.aws:/root/.aws", '-it', TAG]
 subprocess.run(run_command, check=True)

@@ -14,4 +14,8 @@ fn main() {
     build.include("../src")
         .warnings(true)
         .compile("zort_runtime");
+
+    println!("cargo:rerun-if-changed=../src/runtime.c");
+    println!("cargo:rustc-link-lib=dylib=c");
+
 }
