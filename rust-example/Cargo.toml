@@ -6,7 +6,7 @@ links = "c"
 build = "build.rs"
 
 [dependencies]
-zort-rust-binding = { path = "../zort-rust-binding" }
+aws_lambda_libc = { path = "../rust-binding" }
 libc = { version = "0.2.167", default-features = false }
 
 [profile.release]

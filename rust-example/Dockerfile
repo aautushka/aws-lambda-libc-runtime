@@ -10,18 +10,18 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-WORKDIR /build/zort-rust-binding
-COPY zort-rust-binding/Cargo.toml .
+WORKDIR /build/rust-binding
+COPY rust-binding/Cargo.toml .
 RUN mkdir src && echo 'fn main() {}' > src/lib.rs
 RUN cargo build --target ${TARGET} --release
 
 WORKDIR /build
 COPY . .
 
-WORKDIR /build/zort-rust-binding
+WORKDIR /build/rust-binding
 RUN cargo build --target ${TARGET} --release
 
-WORKDIR /build/zort-rust-example
+WORKDIR /build/rust-example
 RUN cargo build --target ${TARGET} --release
 RUN cp target/${TARGET}/release/bootstrap /build/bootstrap
 RUN strip -s /build/bootstrap

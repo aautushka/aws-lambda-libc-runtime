@@ -1,5 +1,5 @@
 [package]
-name = "zort-rust-binding"
+name = "aws_lambda_libc"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,9 +10,8 @@ libc = { version = "0.2.167", default-features = false }
 cc = "1.0"
 
 [lib]
-name = "zort_rust_binding"
+name = "aws_lambda_libc"
 path = "src/lib.rs"
 
 [profile.release]
 panic = "abort"
-lto = true

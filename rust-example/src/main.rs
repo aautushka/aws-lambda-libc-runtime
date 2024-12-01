@@ -7,7 +7,7 @@ pub extern "C" fn _start() -> ! {
     lambda_event_loop(handler);
 }
 
-use zort_rust_binding::api::{lambda_event_loop, Event, Writer};
+use aws_lambda_libc::api::{lambda_event_loop, Event, Writer};
 
 fn handler(event: &Event, writer: &mut Writer) -> () {
     // Process the event and return the result as a JSON string

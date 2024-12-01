@@ -2,10 +2,10 @@ This is an ultra-slim, minimalistic custom runtime for AWS Lambda, with API bind
 
 # Features
 - No abstraction bloat: HTTP Headers and JSON payload delivered in a raw char* buffer
-- No dependencies outside of standard C library
+- No dependencies outside of standard C library. Opt-in to whatever you actually need.
 - Dynamically linked to glibc on target al2023 image, to minimize binary size
 - No allocator dependency: Bring your own arena or gc allocator, or use malloc if you want
-- (Optional) Rust language binding with no_std, no_core and no#tokio overhead
+- (Optional) Rust language binding with no_std, no_main and no#tokio
 - Rust binary is the same size as C binary (probably because of ELF page-boundary padding).
 
 # Benefits
@@ -24,4 +24,22 @@ This is an ultra-slim, minimalistic custom runtime for AWS Lambda, with API bind
 - `src/`: The C source code which includes the runtime and an example function
 - `tests/`: Unit-integration test using a mock server in Python to emulate the AWS Lambda Environment locally.
 - `sam-deploy/`: Scripts for building & deploying using AWS SAM CLI in Docker. This is optional, you could alternatively use CDK, Terraform, the plain AWS CLI, etc.
-- `rust-binding/`: experimental Rust integration
+- `rust-binding/` & `rust-example/`: experimental Rust integration
+
+# Getting Started
+
+> Pre-requisites
+```
+git clone 
+aws configure
+```
+
+> C
+```
+python sam-deploy/deploy.py
+```
+
+> Rust
+```
+python rust-example/build-test-deploy.py
+```
