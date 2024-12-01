@@ -212,7 +212,11 @@ void *mapalloc(size_t size)
 {
     int pagesize = getpagesize();
     size = (size | (pagesize - 1)) + 1 + pagesize;
-    void *ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+    void *ptr = mmap(NULL, size, 
+        PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
+        -1, 0);
+
     FATAL(ptr == MAP_FAILED, "Failed to allocate memory\n");
     // set a SEGV trap at the end of the buffer
     mprotect(ptr + (size - pagesize), pagesize, PROT_NONE);

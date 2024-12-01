@@ -1,17 +1,22 @@
-This is an ultra-slim, minimalistic C runtime for AWS Lambda, with an optional Rust language binding.
+This is an ultra-slim, minimalistic custom runtime for AWS Lambda, with API bindings for C and Rust.
 
 # Features
-- Minimize waste of compute resources
-- Extremely small deployment package size (~5kb zipped)!
-- Under 5ms cold start at smallest allocation size of 128mb
-- No dependencies outside of standard C libraries
 - No abstraction bloat: HTTP Headers and JSON payload delivered in a raw char* buffer
-- No malloc dependency: Bring your own arena or gc allocator, or use malloc if you want
+- No dependencies outside of standard C library
+- Dynamically linked to glibc on target al2023 image, to minimize binary size
+- No allocator dependency: Bring your own arena or gc allocator, or use malloc if you want
 - (Optional) Rust language binding with no_std, no_core and no#tokio overhead
+- Rust binary is the same size as C binary (probably because of ELF page-boundary padding).
+
+# Benefits
+- Extremely small deployment package size (~5kb zipped)!
+- Extremely fast cold starts (4 to 5 milliseconds)
+- Minimizes waste of compute resources, slowing down Global Warming!
 
 # Alternatives
-- This is an alternative to https://github.com/PauloMigAlmeida/aws-lambda-c-runtime
-- If you are not sure which project to use, you should probably choose the other one. 
+- This is an alternative to https://github.com/PauloMigAlmeida/aws-lambda-c-runtime for C
+- It's also an alternative to https://github.com/awslabs/aws-lambda-rust-runtime for Rust
+- If you are not sure which project to use, you should probably choose one of the others. 
 - If you like Javascript, have a look at https://github.com/awslabs/llrt
 
 # Project Structure
