@@ -107,7 +107,7 @@ static void http(const runtime *rt, const char *path, const char *method, const 
     DEBUG("Making HTTP request to host=[%s], path=[%s], method=[%s]\n", host, path, method);
     int sockfd = socket_connect(addr);
 
-    char request[MAX_HEADER_SIZE];
+    char request[MAX_HTTP_HEADER_SIZE];
     snprintf(request, sizeof(request),
              "%s %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\n"
              "Content-Length: %d\r\n\r\n",
@@ -127,7 +127,7 @@ static void http(const runtime *rt, const char *path, const char *method, const 
     char *body_start = NULL;
     int total_bytes_received = 0;
     int content_length = -1;
-    int remain = MAX_REQUEST_BUFFER;
+    int remain = INCOMING_LAMBDA_REQUEST_BUFFER_SIZE;
     char *delimiter = NULL;
     hb->body.data = NULL;
     hb->awsRequestId.data = NULL;
@@ -135,7 +135,7 @@ static void http(const runtime *rt, const char *path, const char *method, const 
     while (remain)
     {
 
-        FATAL(parse_point >= response + MAX_REQUEST_BUFFER, "Buffer overflow");
+        FATAL(parse_point >= response + INCOMING_LAMBDA_REQUEST_BUFFER_SIZE, "Buffer overflow");
 
         if (parse_point >= response + total_bytes_received)
         {
@@ -220,7 +220,7 @@ static void *mapalloc(size_t size)
     FATAL(ptr == MAP_FAILED, "Failed to allocate memory\n");
     // set a SEGV trap at the end of the buffer
     mprotect(ptr + (size - pagesize), pagesize, PROT_NONE);
-    DEBUG("Allocated %d bytes at %p\n", MAX_REQUEST_BUFFER, ptr);
+    DEBUG("Allocated %d bytes at %p\n", size, ptr);
     return ptr;
 }
 
@@ -235,8 +235,8 @@ runtime* runtime_init() {
     DEBUG("Runtime API: %s\n", rt.runtime_api);
     rt.runtime_addrinfo = resolve_host(rt.runtime_api);
 
-    hb.buffer.data = mapalloc(MAX_REQUEST_BUFFER);
-    rt.response_buffer = mapalloc(MAX_RESPONSE_BUFFER);
+    hb.buffer.data = mapalloc(INCOMING_LAMBDA_REQUEST_BUFFER_SIZE);
+    rt.response_buffer = mapalloc(OUTGOING_LAMBDA_RESPONSE_BUFFER_SIZE);
     return &rt;
 }
 
