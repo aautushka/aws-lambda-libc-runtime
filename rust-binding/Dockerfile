@@ -1,10 +1,16 @@
+#
+# simple "canary build" to check if the crate compiles at all
+#
+
 FROM rust:1.82-alpine
+
+WORKDIR /build/rust-binding
+COPY Cargo.toml ./
+RUN mkdir src && echo 'fn main() {}' > src/lib.rs
+RUN cargo build
+
 WORKDIR /build
-COPY rust-binding/Cargo.toml rust-binding/Cargo.toml
-RUN (cd rust-binding && mkdir src && echo 'fn main() {}' > src/lib.rs)
-RUN (cd rust-binding && cargo build --release)
-
 COPY . .
-RUN (cd rust-binding && cargo build --release)
 
-CMD ["cargo", "test"]
+WORKDIR /build/rust-binding
+RUN cargo build

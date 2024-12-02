@@ -1,13 +1,13 @@
 #![no_std]
 #![no_main]
 
+use aws_lambda_libc::api::{lambda_event_loop, Event, Writer};
+
 #[no_mangle]
 #[link_section = ".text._start"]
 pub extern "C" fn _start() -> ! {
     lambda_event_loop(handler);
 }
-
-use aws_lambda_libc::api::{lambda_event_loop, Event, Writer};
 
 fn handler(event: &Event, writer: &mut Writer) -> () {
     // Process the event and return the result as a JSON string

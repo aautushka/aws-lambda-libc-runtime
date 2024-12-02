@@ -72,7 +72,7 @@ static int send_all(int sockfd, const char *buf, int len)
     return total_sent;
 }
 
-int socket_connect(const struct addrinfo *addr)
+static inline int socket_connect(const struct addrinfo *addr)
 {
     DEBUG("Creating socket\n");
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -208,7 +208,7 @@ static void http(const runtime *rt, const char *path, const char *method, const 
     DEBUG("Response received\n");
 }
 
-void *mapalloc(size_t size)
+static void *mapalloc(size_t size)
 {
     int pagesize = getpagesize();
     size = (size | (pagesize - 1)) + 1 + pagesize;
