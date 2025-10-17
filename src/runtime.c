@@ -1,5 +1,8 @@
+// clang-format off
+#ifndef __APPLE__
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -271,3 +274,4 @@ void start_lambda(int (*handler)(const http_recv_buffer *, char *))
         send_response(rt, output_buffer, lambda_response_length);
     }
 }
+// clang-format on
